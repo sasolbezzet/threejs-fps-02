@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Operation Vortex: Tactical Three.js FPS</title>
+<style>
+  :root {
+    --canvas: #0e1117;
+    --surface: #161b22;
+    --panel: #21262d;
+    --hairline: #30363d;
+    --accent: #e3b341;
+    --cyan: #58a6ff;
+    --emerald: #3fb950;
+    --crimson: #f85149;
+    --ink: #f0f6fc;
+    --muted: #8b949e;
+    --font-ui: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-ui);
+    user-select: none;
+  }
+  #game, #game canvas { position: fixed; inset: 0; display: block; }
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+
+  /* Tactical Crosshair */
+  #crosshair {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    width: 32px;
+    height: 32px;
+    transform: translate(-50%, -50%);
+    --bloom: 10px;
+  }
+  #crosshair i {
+    position: absolute;
+    background: var(--cyan);
+    box-shadow: 0 0 4px rgba(88, 166, 255, 0.6);
+  }
+  #crosshair i:nth-child(1) { left: 15px; top: calc(16px - var(--bloom) - 6px); width: 2px; height: 6px; }
+  #crosshair i:nth-child(2) { left: 15px; top: calc(16px + var(--bloom)); width: 2px; height: 6px; }
+  #crosshair i:nth-child(3) { top: 15px; left: calc(16px - var(--bloom) - 6px); height: 2px; width: 6px; }
+  #crosshair i:nth-child(4) { top: 15px; left: calc(16px + var(--bloom)); height: 2px; width: 6px; }
+
+  /* Hitmarker */
+  #hitmarker {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    width: 24px;
+    height: 24px;
+    transform: translate(-50%, -50%) rotate(45deg);
+    opacity: 0;
+    transition: opacity 60ms linear;
+  }
+  #hitmarker.on { opacity: 1; }
+  #hitmarker i { position: absolute; background: #ffffff; }
+  #hitmarker.headshot i { background: var(--crimson); box-shadow: 0 0 8px var(--crimson); }
+  #hitmarker i:nth-child(1) { left: 11px; top: 0; width: 2px; height: 7px; }
+  #hitmarker i:nth-child(2) { left: 11px; bottom: 0; width: 2px; height: 7px; }
+  #hitmarker i:nth-child(3) { top: 11px; left: 0; height: 2px; width: 7px; }
+  #hitmarker i:nth-child(4) { top: 11px; right: 0; height: 2px; width: 7px; }
+
+  /* Top Bar (Round Timer, Scores, Objectives) */
+  #top-bar {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    background: rgba(22, 27, 34, 0.85);
+    padding: 8px 24px;
+    border-radius: 6px;
+    border: 1px solid var(--hairline);
+    backdrop-filter: blur(8px);
+  }
+  #hud-timer {
+    font-family: var(--font-mono);
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  #hud-timer.bomb-armed {
+    color: var(--crimson);
+    animation: pulse 1s infinite alternate;
+  }
+  #hud-score {
+    font-size: 13px;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  /* Bottom Left (Health, Armor & Cash) */
+  #status-panel {
+    position: fixed;
+    left: 28px;
+    bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    background: rgba(22, 27, 34, 0.85);
+    padding: 12px 20px;
+    border-radius: 6px;
+    border: 1px solid var(--hairline);
+    backdrop-filter: blur(8px);
+  }
+  .stat-block { display: flex; flex-direction: column; }
+  .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; font-weight: 600; }
+  .stat-val { font-family: var(--font-mono); font-size: 28px; font-weight: 700; line-height: 1.1; }
+  #hud-hp { color: var(--emerald); }
+  #hud-ap { color: var(--cyan); }
+  #hud-cash { color: var(--accent); }
+
+  /* Bottom Right (Ammo) */
+  #ammo-panel {
+    position: fixed;
+    right: 28px;
+    bottom: 24px;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    background: rgba(22, 27, 34, 0.85);
+    padding: 12px 24px;
+    border-radius: 6px;
+    border: 1px solid var(--hairline);
+    backdrop-filter: blur(8px);
+  }
+  #hud-ammo-mag { font-family: var(--font-mono); font-size: 42px; font-weight: 700; color: var(--ink); }
+  #hud-ammo-mag.low { color: var(--accent); }
+  #hud-ammo-res { font-family: var(--font-mono); font-size: 18px; color: var(--muted); }
+
+  /* Radar / Minimap Top Left */
+  #radar-wrapper {
+    position: fixed;
+    left: 28px;
+    top: 24px;
+    background: rgba(14, 17, 23, 0.85);
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    padding: 6px;
+    backdrop-filter: blur(8px);
+  }
+  #radar-canvas { display: block; border-radius: 4px; }
+
+  /* Killfeed Top Right */
+  #hud-killfeed {
+    position: fixed;
+    right: 28px;
+    top: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-end;
+  }
+  .killfeed-item {
+    background: rgba(22, 27, 34, 0.85);
+    border: 1px solid var(--hairline);
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    color: var(--ink);
+  }
+  .kf-weapon { color: var(--accent); font-weight: 600; margin: 0 4px; }
+
+  /* Buy Menu Modal */
+  #buy-menu {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: rgba(14, 17, 23, 0.8);
+    backdrop-filter: blur(6px);
+    z-index: 20;
+    pointer-events: auto;
+  }
+  #buy-menu[hidden] { display: none; }
+  .buy-dialog {
+    width: min(580px, 92%);
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    padding: 24px;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6);
+  }
+  .buy-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .buy-btn {
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    color: var(--ink);
+    padding: 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+    transition: all 120ms ease;
+  }
+  .buy-btn:hover {
+    background: #2d333b;
+    border-color: var(--cyan);
+  }
+  .buy-cost { color: var(--accent); font-weight: 700; font-family: var(--font-mono); }
+
+  /* Main Menu Overlay */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: rgba(14, 17, 23, 0.92);
+    z-index: 30;
+  }
+  .overlay[hidden] { display: none; }
+  .panel {
+    width: min(480px, 92%);
+    padding: 32px;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+  }
+  .panel h1 {
+    margin: 0 0 6px;
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--cyan);
+  }
+  .panel p {
+    margin: 0 0 20px;
+    font-size: 15px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  #play {
+    width: 100%;
+    padding: 14px;
+    font-size: 16px;
+    font-weight: 600;
+    background: var(--accent);
+    color: var(--canvas);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: opacity 120ms ease;
+  }
+  #play:hover { opacity: 0.9; }
+  .keys-list {
+    margin: 20px 0 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .keys-list li { display: flex; align-items: center; gap: 8px; }
+  kbd {
+    min-width: 22px;
+    padding: 3px 6px;
+    border: 1px solid var(--hairline);
+    background: var(--panel);
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    color: var(--ink);
+    font-size: 11px;
+    text-align: center;
+  }
+
+  @keyframes pulse {
+    0% { opacity: 0.6; transform: scale(0.98); }
+    100% { opacity: 1; transform: scale(1.02); }
+  }
+</style>
+</head>
+<body>
+<div id="game"></div>
+
+<div id="hud" aria-hidden="true">
+  <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+  <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+
+  <div id="top-bar">
+    <div id="hud-timer">1:45</div>
+    <div id="hud-score">ATT 0 · 0 DEF (Round 1/5)</div>
+  </div>
+
+  <div id="radar-wrapper">
+    <canvas id="radar-canvas" width="120" height="120"></canvas>
+  </div>
+
+  <div id="hud-killfeed"></div>
+
+  <div id="status-panel">
+    <div class="stat-block"><span class="stat-label">Health</span><span id="hud-hp" class="stat-val">100</span></div>
+    <div class="stat-block"><span class="stat-label">Armor</span><span id="hud-ap" class="stat-val">100</span></div>
+    <div class="stat-block"><span class="stat-label">Funds</span><span id="hud-cash" class="stat-val">$800</span></div>
+  </div>
+
+  <div id="ammo-panel">
+    <span id="hud-ammo-mag">30</span>
+    <span id="hud-ammo-res">/ 90</span>
+  </div>
+</div>
+
+<div id="buy-menu" hidden>
+  <div class="buy-dialog">
+    <h2 style="margin: 0; font-size: 20px; color: var(--accent);">Tactical Armory (Press B to close)</h2>
+    <div class="buy-grid">
+      <button class="buy-btn" data-item="rifle"><span>Vortex-AR 47</span><span class="buy-cost">$2700</span></button>
+      <button class="buy-btn" data-item="sniper"><span>Viper .50 Sniper</span><span class="buy-cost">$4500</span></button>
+      <button class="buy-btn" data-item="shotgun"><span>Breach-12 Shotgun</span><span class="buy-cost">$1500</span></button>
+      <button class="buy-btn" data-item="armor"><span>Heavy Kevlar Vest</span><span class="buy-cost">$650</span></button>
+    </div>
+  </div>
+</div>
+
+<div id="overlay" class="overlay">
+  <section class="panel" role="dialog" aria-modal="true">
+    <h1>OPERATION VORTEX</h1>
+    <p>Tactical round-based breach simulation. Plant the EMP Core at Site A or B, neutralize security drones, manage your economy, and secure victory.</p>
+    <button id="play" type="button">Deploy into Compound</button>
+    <ul class="keys-list">
+      <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Tactical Move</li>
+      <li><kbd>Mouse</kbd> Aim & Look</li>
+      <li><kbd>Click</kbd> Discharge Weapon</li>
+      <li><kbd>R</kbd> Tactical Reload</li>
+      <li><kbd>Ctrl</kbd> Crouch (Precision)</li>
+      <li><kbd>Space</kbd> Combat Vault</li>
+      <li><kbd>E</kbd> Plant / Defuse EMP</li>
+      <li><kbd>B</kbd> Armory Buy Menu</li>
+    </ul>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.min.js"
+  }
+}
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
