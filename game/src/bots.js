@@ -140,7 +140,25 @@ export class BotSquad {
     return { killed: false, isHeadshot, botName: bot.name };
   }
 
-  update(dt, now, playerPos, onBotShoot) {
+  // Tactical Hearing System: React to player gunfire, footsteps, or grenade detonations
+  reactToSound(soundPos, hearingRadius = 30) {
+    for (const bot of this.bots) {
+      if (bot.isDead || bot.team !== TEAMS.DEFENDERS) continue;
+      const dist = bot.group.position.distanceTo(soundPos);
+      if (dist <= hearingRadius) {
+        bot.state = 'ALERT';
+        const toSound = soundPos.clone().sub(bot.group.position);
+        toSound.y = 0;
+        if (toSound.length() > 0.1) {
+          bot.targetPos.copy(soundPos);
+          bot.lookDir.copy(toSound.normalize());
+          bot.group.rotation.y = Math.atan2(bot.lookDir.x, bot.lookDir.z);
+        }
+      }
+    }
+  }
+
+  update(dt, now, playerPos, onBotShoot, grenadeManager = null) {
     for (const bot of this.bots) {
       if (bot.isDead) continue;
 
@@ -148,8 +166,10 @@ export class BotSquad {
       const toPlayer = playerPos.clone().sub(bot.group.position);
       toPlayer.y = 0;
 
-      // Vision Raycast check: can bot see player?
-      const canSeePlayer = bot.team === TEAMS.DEFENDERS && distToPlayer < 40 && toPlayer.angleTo(bot.lookDir) < Math.PI / 2.5;
+      // Vision Raycast & Tactical Smoke Occlusion Check: can bot see player?
+      const withinRangeAndFov = bot.team === TEAMS.DEFENDERS && distToPlayer < 40 && toPlayer.angleTo(bot.lookDir) < Math.PI / 2.5;
+      const smokeObscured = (grenadeManager && withinRangeAndFov) ? grenadeManager.isSmokeBlockingLine(bot.group.position, playerPos) : false;
+      const canSeePlayer = withinRangeAndFov && !smokeObscured;
 
       if (canSeePlayer) {
         bot.state = 'COMBAT';

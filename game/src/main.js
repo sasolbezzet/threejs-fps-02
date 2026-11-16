@@ -7,6 +7,7 @@ import { createMap } from './map.js';
 import { PlayerController } from './player.js';
 import { BotSquad } from './bots.js';
 import { BombSystem } from './bomb.js';
+import { TacticalGrenadeManager } from './grenade.js';
 import { TacticalHUD } from './hud.js';
 import { audio } from './audio.js';
 import { WEAPON_REGISTRY, WeaponInstance } from './weapons.js';
@@ -36,6 +37,7 @@ const mapData = createMap(scene);
 const player = new PlayerController(camera, scene, mapData);
 const botSquad = new BotSquad(scene, mapData);
 const bomb = new BombSystem(scene, mapData);
+const grenadeManager = new TacticalGrenadeManager(scene);
 const hud = new TacticalHUD();
 
 // Round State
@@ -87,6 +89,9 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyB') {
     roundState.buyPhaseActive = !roundState.buyPhaseActive;
     hud.toggleBuyMenu(roundState.buyPhaseActive);
+  }
+  if (e.code === 'KeyG') {
+    throwTacticalGrenade();
   }
   if (e.code === 'Digit1') player.activeSlot = 'primary';
   if (e.code === 'Digit2') player.activeSlot = 'secondary';
@@ -163,9 +168,21 @@ document.querySelectorAll('.buy-btn').forEach(btn => {
     } else if (item === 'armor' && player.cash >= 650) {
       player.cash -= 650;
       player.armor = 100;
+    } else if (item === 'smoke' && player.cash >= 300 && player.grenades < 2) {
+      player.cash -= 300;
+      player.grenades += 1;
     }
   });
 });
+
+function throwTacticalGrenade() {
+  if (player.grenades > 0) {
+    player.grenades -= 1;
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    grenadeManager.throwGrenade(camera.position, forward);
+    botSquad.reactToSound(player.position, 28);
+  }
+}
 
 // Ballistic Raycasting
 const raycaster = new THREE.Raycaster();
@@ -185,6 +202,9 @@ function shootActiveWeapon() {
   else if (weapon.config.id === 'shotgun') audio.fireShotgun();
 
   player.applyRecoil(weapon.config.recoilClimb);
+
+  // Bot Hearing Alert: gunfire alerts bots within 38m
+  botSquad.reactToSound(player.position, 38);
 
   // Spread bloom calculation
   const isMoving = player.velocity.lengthSq() > 0.1;
@@ -258,6 +278,7 @@ function startNewRound() {
   player.resetRound();
   botSquad.resetRound();
   bomb.reset();
+  grenadeManager.resetRound();
 }
 
 // Bot shoot callback
@@ -352,9 +373,15 @@ function tick(nowMs) {
         shootActiveWeapon();
       }
 
+      // Footstep hearing alert when sprinting or moving fast
+      if (player.velocity.lengthSq() > 16.0) {
+        botSquad.reactToSound(player.position, 12);
+      }
+
       player.activeWeapon.updateReload(now);
       player.update(FIXED_STEP, keys);
-      botSquad.update(FIXED_STEP, now, player.position, onBotShootPlayer);
+      grenadeManager.update(FIXED_STEP, mapData.collisionBoxes);
+      botSquad.update(FIXED_STEP, now, player.position, onBotShootPlayer, grenadeManager);
     }
     accumulator -= FIXED_STEP;
   }

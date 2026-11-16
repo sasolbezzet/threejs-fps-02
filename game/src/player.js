@@ -42,6 +42,7 @@ export class PlayerController {
     this.activeSlot = 'primary';
     this.hasBomb = true;
     this.hasGrenade = true;
+    this.grenades = 1; // Tactical Smoke Grenades (max 2)
 
     // Procedural Viewmodel (First-person gun mesh)
     this.gunGroup = new THREE.Group();
@@ -84,6 +85,7 @@ export class PlayerController {
     this.velocity.set(0, 0, 0);
     this.pitch = 0;
     this.yaw = Math.PI;
+    this.grenades = Math.max(1, this.grenades);
     this.activeWeapon.ammoInMag = this.activeWeapon.config.magazineSize;
     this.activeWeapon.isReloading = false;
   }

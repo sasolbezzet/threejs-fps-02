@@ -16,6 +16,7 @@ export class TacticalHUD {
     this.hitmarkerEl = document.getElementById('hitmarker');
     this.killfeedEl = document.getElementById('hud-killfeed');
     this.buyMenuEl = document.getElementById('buy-menu');
+    this.grenadeEl = document.getElementById('hud-grenades');
     this.radarCanvas = document.getElementById('radar-canvas');
     this.radarCtx = this.radarCanvas ? this.radarCanvas.getContext('2d') : null;
 
@@ -26,6 +27,7 @@ export class TacticalHUD {
     if (this.hpEl) this.hpEl.textContent = Math.round(player.health);
     if (this.apEl) this.apEl.textContent = Math.round(player.armor);
     if (this.cashEl) this.cashEl.textContent = `$${player.cash}`;
+    if (this.grenadeEl) this.grenadeEl.textContent = player.grenades;
 
     const weapon = player.activeWeapon;
     if (this.ammoMagEl && this.ammoResEl) {
